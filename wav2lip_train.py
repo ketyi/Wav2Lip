@@ -113,20 +113,20 @@ class Dataset(object):
             idx = random.randint(0, len(self.all_videos) - 1)
             vidname = self.all_videos[idx]
             img_names = list(glob(join(vidname, '*.jpg')))
-            if len(img_names) <= 3 * syncnet_T:
+            if len(img_names) <= 3 * syncnet_T: # why 3X? Because we need 2 syncnet_T sized windows and 1 syncnet_T sized wrong window in the end (?)
                 continue
             
-            img_name = random.choice(img_names)
+            img_name = random.choice(img_names) # img_name: a kezdokep
             wrong_img_name = random.choice(img_names)
             while wrong_img_name == img_name:
                 wrong_img_name = random.choice(img_names)
 
-            window_fnames = self.get_window(img_name)
+            window_fnames = self.get_window(img_name) # egy ablak, ami ezzel a keppel kezdodik es syncnet_T elemet tartalmaz
             wrong_window_fnames = self.get_window(wrong_img_name)
             if window_fnames is None or wrong_window_fnames is None:
                 continue
 
-            window = self.read_window(window_fnames)
+            window = self.read_window(window_fnames) # ez egy lista, ami syncnet_T db kepet tartalmaz
             if window is None:
                 continue
 
@@ -138,28 +138,28 @@ class Dataset(object):
                 wavpath = join(vidname, "audio.wav")
                 wav = audio.load_wav(wavpath, hparams.sample_rate)
 
-                orig_mel = audio.melspectrogram(wav).T
+                orig_mel = audio.melspectrogram(wav).T # ebben benne van a teljes video fajl hangjanak a mel spektogramja (STFT a teljes idointervallumra)
             except Exception as e:
                 continue
 
-            mel = self.crop_audio_window(orig_mel.copy(), img_name)
+            mel = self.crop_audio_window(orig_mel.copy(), img_name) # a kezdokeptol fogva vagunk egy 16-os (i.e. syncnet_mel_step_size) darabot a video teljes STFT-jebol. Dimenzioi: 16 x 80
             
             if (mel.shape[0] != syncnet_mel_step_size):
                 continue
 
-            indiv_mels = self.get_segmented_mels(orig_mel.copy(), img_name)
+            indiv_mels = self.get_segmented_mels(orig_mel.copy(), img_name) # syncnet_T darab mel spektogram listaja; az adott kezdokep (i.e. img_name) van kozepen a listaban (marmint ha syncnet_T = 5). Pontosan: 2 frame-mel hamarabb kezdodik mint a kezdokep es syncnet_T darab.
             if indiv_mels is None: continue
 
-            window = self.prepare_window(window)
-            y = window.copy()
-            window[:, :, window.shape[2]//2:] = 0.
+            window = self.prepare_window(window) # ez egy tenzort keszit a window-bol, aminek dimenzioi: 3 x T x H x W, ahol a 3: RGB, T: syncnet_T, H: hparams.img_size, W: hparams.img_size
+            y = window.copy() # y lesz a ground truth, dimenzioi: 3 x T x H x W
+            window[:, :, window.shape[2]//2:] = 0. # a H fele ki van maszkolva
 
-            wrong_window = self.prepare_window(wrong_window)
+            wrong_window = self.prepare_window(wrong_window) # a wrong_window a referencia kepek
             x = np.concatenate([window, wrong_window], axis=0)
 
-            x = torch.FloatTensor(x)
-            mel = torch.FloatTensor(mel.T).unsqueeze(0)
-            indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)
+            x = torch.FloatTensor(x) # dimenzioi: 6 x T x H x W
+            mel = torch.FloatTensor(mel.T).unsqueeze(0) # dimenzioi: 1 x 80 x 16
+            indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1) # dimenzioi: 5 x 1 x 80 x 16
             y = torch.FloatTensor(y)
             return x, indiv_mels, mel, y
 
@@ -212,15 +212,15 @@ def train(device, model, train_data_loader, test_data_loader, optimizer,
             optimizer.zero_grad()
 
             # Move data to CUDA device
-            x = x.to(device)
-            mel = mel.to(device)
-            indiv_mels = indiv_mels.to(device)
-            gt = gt.to(device)
+            x = x.to(device) # 6 x syncnet_T x H x W: masked + reference concatenated
+            mel = mel.to(device) # 1 x 80 x 16
+            indiv_mels = indiv_mels.to(device) # syncnet_T x 1 x 80 x 16
+            gt = gt.to(device) # 3 x syncnet_T x H x W: orig
 
-            g = model(indiv_mels, x)
+            g = model(indiv_mels, x) # syncnet_T pieces of centered mels and syncnet_T pieces of images, output dimensions: 3 x syncnet_T x H x W
 
             if hparams.syncnet_wt > 0.:
-                sync_loss = get_sync_loss(mel, g)
+                sync_loss = get_sync_loss(mel, g) # mel of the first frame (covering syncnet_T-frame time but with dims 1 x 80 x 16) and the generated syncnet_T pieces of images (3 x syncnet_T x H x W)
             else:
                 sync_loss = 0.
 
