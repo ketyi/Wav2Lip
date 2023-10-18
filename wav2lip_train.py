@@ -93,6 +93,7 @@ class Dataset(object):
             if m.shape[0] != syncnet_mel_step_size:
                 return None
             mels.append(m.T) # collecting mel spectrogram chunks of 16 mel steps each (covering 200 ms); each chunk is centered around the corresponding image frame's start time
+            # PC-AVS paper describes the same in its Section 4.1 https://github.com/Hangz-nju-cuhk/Talking-Face_PC-AVS/blob/main/data/voxtest_dataset.py#L51
 
         mels = np.asarray(mels)
 
