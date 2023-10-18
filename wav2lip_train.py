@@ -77,7 +77,7 @@ class Dataset(object):
             start_frame_num = start_frame
         else:
             start_frame_num = self.get_frame_id(start_frame) # 0-indexing ---> 1-indexing
-        start_idx = int(80. * (start_frame_num / float(hparams.fps)))
+        start_idx = int(80. * (start_frame_num / float(hparams.fps))) # collecting mel spectrogram chunk of 16 mel steps (covering 200 ms); chunk's start time is the corresponding image frame's start time
         
         end_idx = start_idx + syncnet_mel_step_size
 
@@ -87,12 +87,12 @@ class Dataset(object):
         mels = []
         assert syncnet_T == 5
         start_frame_num = self.get_frame_id(start_frame) + 1 # 0-indexing ---> 1-indexing
-        if start_frame_num - 2 < 0: return None
+        if start_frame_num - 2 < 0: return None # fun fact: hence the first 2 frames of each video are never used/covered
         for i in range(start_frame_num, start_frame_num + syncnet_T):
             m = self.crop_audio_window(spec, i - 2)
             if m.shape[0] != syncnet_mel_step_size:
                 return None
-            mels.append(m.T)
+            mels.append(m.T) # collecting mel spectrogram chunks of 16 mel steps each (covering 200 ms); each chunk is centered around the corresponding image frame's start time
 
         mels = np.asarray(mels)
 
@@ -113,7 +113,7 @@ class Dataset(object):
             idx = random.randint(0, len(self.all_videos) - 1)
             vidname = self.all_videos[idx]
             img_names = list(glob(join(vidname, '*.jpg')))
-            if len(img_names) <= 3 * syncnet_T: # why 3X? Because we need 2 syncnet_T sized windows and 1 syncnet_T sized wrong window in the end (?)
+            if len(img_names) <= 3 * syncnet_T: # why 3X? Because we need 2 syncnet_T sized windows (due to list of the centered mels) and 1 syncnet_T sized wrong window (for the reference frames) in the end
                 continue
             
             img_name = random.choice(img_names) # img_name: a kezdokep
